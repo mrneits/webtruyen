@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Đọc Truyện Cá Nhân</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #212529;
+            --card-bg: #f8f9fa;
+            --border-color: #dee2e6;
+            --primary-color: #0d6efd;
+            --accent-color: #198754;
+        }
+
+        body.dark-mode {
+            --bg-color: #121212;
+            --text-color: #e0e0e0;
+            --card-bg: #1e1e1e;
+            --border-color: #333333;
+            --primary-color: #3d8bfd;
+            --accent-color: #2ec4b6;
+        }
+
+        body.sepia-mode {
+            --bg-color: #f4ecd8;
+            --text-color: #5b4636;
+            --card-bg: #eae0d0;
+            --border-color: #d6c7b2;
+            --primary-color: #8b5a2b;
+            --accent-color: #6b8e23;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-color); transition: all 0.3s ease; line-height: 1.6; padding-bottom: 60px; }
+        .container { max-width: 800px; margin: 0 auto; padding: 15px; }
+
+        /* Header & Controls */
+        header { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border-color); margin-bottom: 15px; }
+        h1 { font-size: 1.4rem; cursor: pointer; }
+        .theme-buttons button { padding: 6px 12px; margin-left: 4px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); border-radius: 4px; cursor: pointer; }
+
+        /* Views */
+        .view { display: none; }
+        .view.active { display: block; }
+
+        /* Search & Action Bar */
+        .action-bar { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+        .search-box { flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-bg); color: var(--text-color); }
+        .btn { padding: 8px 14px; border: none; border-radius: 4px; background: var(--primary-color); color: white; cursor: pointer; font-weight: bold; }
+        .btn-danger { background: #dc3545; }
+        .btn-secondary { background: #6c757d; }
+
+        /* Status Card */
+        .status-card { background: var(--card-bg); border: 1px solid var(--border-color); padding: 12px; border-radius: 6px; margin-bottom: 15px; font-size: 0.9rem; }
+
+        /* List Items */
+        .chapter-list { list-style: none; }
+        .chapter-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid var(--border-color); background: var(--card-bg); margin-bottom: 6px; border-radius: 4px; }
+        .chapter-item.reading { border-left: 4px solid var(--primary-color); }
+        .chapter-title-click { flex: 1; cursor: pointer; margin-left: 10px; font-weight: 500; }
+        .badge { font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; background: var(--accent-color); color: white; margin-left: 5px; }
+
+        /* Pagination */
+        .pagination { display: flex; justify-content: center; gap: 10px; margin-top: 15px; align-items: center; }
+
+        /* Form */
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
+        .form-control { width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-bg); color: var(--text-color); }
+        textarea.form-control { min-height: 200px; resize: vertical; }
+
+        /* Reader */
+        .reader-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .reader-content { font-size: 1.15rem; line-height: 1.8; white-space: pre-wrap; word-wrap: break-word; }
+        .reader-nav { display: flex; justify-content: space-between; margin-top: 25px; padding-top: 15px; border-top: 1px solid var(--border-color); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1 onclick="showList()">📚 Kho Truyện</h1>
+            <div class="theme-buttons">
+                <button onclick="setTheme('light')">☀️ Sáng</button>
+                <button onclick="setTheme('dark')">🌙 Tối</button>
+                <button onclick="setTheme('sepia')">📖 Sách</button>
+            </div>
+        </header>
+
+        <!-- DANH SÁCH CHƯƠNG -->
+        <div id="list-view" class="view active">
+            <div class="status-card" id="status-card">
+                Đang tải thông tin...
+            </div>
+
+            <div class="action-bar">
+                <input type="text" id="search-input" class="search-box" placeholder="Tìm số hoặc tên chương..." oninput="onSearch()">
+                <button class="btn" onclick="showAddForm()">+ Thêm chương</button>
+                <button class="btn btn-danger" onclick="deleteSelected()">Xóa mục đã chọn</button>
+            </div>
+
+            <ul class="chapter-list" id="chapter-list"></ul>
+            <div class="pagination" id="pagination"></div>
+        </div>
+
+        <!-- FORM THÊM CHƯƠNG -->
+        <div id="add-view" class="view">
+            <h2>Thêm Chương Mới</h2>
+            <br>
+            <div class="form-group">
+                <label>Số chương (*):</label>
+                <input type="number" id="new-num" class="form-control" placeholder="Ví dụ: 1">
+            </div>
+            <div class="form-group">
+                <label>Tên chương (Tùy chọn):</label>
+                <input type="text" id="new-title" class="form-control" placeholder="Ví dụ: Khởi đầu mới">
+            </div>
+            <div class="form-group">
+                <label>Nội dung chương (*):</label>
+                <textarea id="new-content" class="form-control" placeholder="Dán nội dung chữ vào đây..."></textarea>
+            </div>
+            <button class="btn" onclick="saveChapter()">Lưu Chương</button>
+            <button class="btn btn-secondary" onclick="showList()">Hủy</button>
+        </div>
+
+        <!-- MÀN HÌNH ĐỌC TRUYỆN -->
+        <div id="read-view" class="view">
+            <div class="reader-header">
+                <button class="btn btn-secondary" onclick="showList()">← Danh sách</button>
+                <h3 id="read-title"></h3>
+            </div>
+            <hr><br>
+            <div class="reader-content" id="read-content"></div>
+            <div class="reader-nav">
+                <button class="btn btn-secondary" id="prev-btn" onclick="navChapter(-1)">← Chương trước</button>
+                <button class="btn btn-secondary" onclick="showList()">Danh sách</button>
+                <button class="btn btn-secondary" id="next-btn" onclick="navChapter(1)">Chương sau →</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = "https://tfchrqpueyqhhjplirwc.supabase.co";
+        const SUPABASE_KEY = "sb_publishable_b0q7j_NDFkrig0g18Xcyhw_GNSgJYnJ";
+        const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let allChapters = [];
+        let filteredChapters = [];
+        let currentPage = 1;
+        const pageSize = 20;
+        let currentChapter = null;
+        let progress = { current_chapter_id: null, highest_chapter_id: null, scroll_position: 0 };
+        let isSavingScroll = true;
+
+        // Khởi tạo
+        window.onload = async () => {
+            setTheme(localStorage.getItem('theme') || 'light');
+            await loadProgress();
+            await loadChapters();
+            
+            // Lắng nghe sự kiện cuộn chuột để tự động lưu vị trí
+            window.addEventListener('scroll', throttle(saveScrollPos, 1000));
+        };
+
+        function setTheme(mode) {
+            document.body.className = mode + '-mode';
+            localStorage.setItem('theme', mode);
+        }
+
+        async function loadProgress() {
+            const { data } = await db.from('reading_progress').select('*').eq('id', 1).single();
+            if (data) progress = data;
+        }
+
+        async function loadChapters() {
+            const { data } = await db.from('chapters').select('*').order('chapter_number', { ascending: true });
+            allChapters = data || [];
+            filteredChapters = [...allChapters];
+            renderStatus();
+            renderList();
+        }
+
+        function renderStatus() {
+            const current = allChapters.find(c => c.id == progress.current_chapter_id);
+            const highest = allChapters.find(c => c.id == progress.highest_chapter_id);
+            
+            document.getElementById('status-card').innerHTML = `
+                📖 <b>Đang đọc:</b> ${current ? `Chương ${current.chapter_number}` : 'Chưa đọc'} | 
+                🏆 <b>Chương cao nhất đã đọc:</b> ${highest ? `Chương ${highest.chapter_number}` : 'Chưa có'}
+            `;
+        }
+
+        function renderList() {
+            const listEl = document.getElementById('chapter-list');
+            listEl.innerHTML = '';
+
+            const start = (currentPage - 1) * pageSize;
+            const pageItems = filteredChapters.slice(start, start + pageSize);
+
+            pageItems.forEach(ch => {
+                const li = document.createElement('li');
+                li.className = `chapter-item ${ch.id == progress.current_chapter_id ? 'reading' : ''}`;
+                
+                let isHighest = ch.id == progress.highest_chapter_id ? '<span class="badge">Cao nhất</span>' : '';
+                let isCurrent = ch.id == progress.current_chapter_id ? '<span class="badge" style="background:#0d6efd">Đang đọc</span>' : '';
+
+                li.innerHTML = `
+                    <input type="checkbox" class="ch-checkbox" value="${ch.id}">
+                    <div class="chapter-title-click" onclick="openChapter(${ch.id})">
+                        <b>Chương ${ch.chapter_number}:</b> ${ch.chapter_title || ''} ${isCurrent} ${isHighest}
+                    </div>
+                `;
+                listEl.appendChild(li);
+            });
+
+            renderPagination();
+        }
+
+        function renderPagination() {
+            const totalPages = Math.ceil(filteredChapters.length / pageSize) || 1;
+            const pagEl = document.getElementById('pagination');
+            pagEl.innerHTML = `
+                <button class="btn btn-secondary" ${currentPage === 1 ? 'disabled' : ''} onclick="changePage(-1)">Trước</button>
+                <span>Trang ${currentPage} / ${totalPages}</span>
+                <button class="btn btn-secondary" ${currentPage === totalPages ? 'disabled' : ''} onclick="changePage(1)">Sau</button>
+            `;
+        }
+
+        function changePage(step) {
+            currentPage += step;
+            renderList();
+        }
+
+        function onSearch() {
+            const q = document.getElementById('search-input').value.toLowerCase();
+            filteredChapters = allChapters.filter(c => 
+                c.chapter_number.toString().includes(q) || 
+                (c.chapter_title && c.chapter_title.toLowerCase().includes(q))
+            );
+            currentPage = 1;
+            renderList();
+        }
+
+        function showView(viewId) {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.getElementById(viewId).classList.add('active');
+            window.scrollTo(0, 0);
+        }
+
+        function showList() {
+            showView('list-view');
+            renderStatus();
+            renderList();
+        }
+
+        function showAddForm() {
+            showView('add-view');
+        }
+
+        async function saveChapter() {
+            const num = parseFloat(document.getElementById('new-num').value);
+            const title = document.getElementById('new-title').value.trim();
+            const content = document.getElementById('new-content').value.trim();
+
+            if (isNaN(num) || !content) {
+                alert("Vui lòng nhập số chương và nội dung!");
+                return;
+            }
+
+            await db.from('chapters').insert([{ chapter_number: num, chapter_title: title, content }]);
+            document.getElementById('new-num').value = '';
+            document.getElementById('new-title').value = '';
+            document.getElementById('new-content').value = '';
+            
+            await loadChapters();
+            showList();
+        }
+
+        async function deleteSelected() {
+            const selected = Array.from(document.querySelectorAll('.ch-checkbox:checked')).map(cb => cb.value);
+            if (selected.length === 0) {
+                alert("Vui lòng chọn ít nhất một chương để xóa!");
+                return;
+            }
+
+            if (confirm(`Bạn có chắc chắn muốn xóa ${selected.length} chương đã chọn?`)) {
+                await db.from('chapters').delete().in('id', selected);
+                await loadChapters();
+            }
+        }
+
+        async function openChapter(id) {
+            isSavingScroll = false; // Tắt lưu vị trí cuộn khi đang chuyển chương
+            currentChapter = allChapters.find(c => c.id == id);
+            if (!currentChapter) return;
+
+            // Cập nhật progress
+            progress.current_chapter_id = id;
+            
+            // Cập nhật chương cao nhất nếu cần
+            const highestCh = allChapters.find(c => c.id == progress.highest_chapter_id);
+            if (!highestCh || currentChapter.chapter_number > highestCh.chapter_number) {
+                progress.highest_chapter_id = id;
+            }
+
+            document.getElementById('read-title').innerText = `Chương ${currentChapter.chapter_number}: ${currentChapter.chapter_title || ''}`;
+            document.getElementById('read-content').innerText = currentChapter.content;
+
+            // Ẩn/hiện nút điều hướng
+            const idx = allChapters.findIndex(c => c.id == id);
+            document.getElementById('prev-btn').style.visibility = idx > 0 ? 'visible' : 'hidden';
+            document.getElementById('next-btn').style.visibility = idx < allChapters.length - 1 ? 'visible' : 'hidden';
+
+            showView('read-view');
+
+            // Cập nhật DB
+            await db.from('reading_progress').update({
+                current_chapter_id: progress.current_chapter_id,
+                highest_chapter_id: progress.highest_chapter_id
+            }).eq('id', 1);
+
+            // Tự động khôi phục vị trí cuộn nếu là chương đang đọc dở
+            setTimeout(() => {
+                window.scrollTo(0, progress.scroll_position || 0);
+                isSavingScroll = true;
+            }, 100);
+        }
+
+        function navChapter(direction) {
+            const idx = allChapters.findIndex(c => c.id == currentChapter.id);
+            if (idx + direction >= 0 && idx + direction < allChapters.length) {
+                progress.scroll_position = 0; // Reset vị trí cuộn khi sang chương mới
+                openChapter(allChapters[idx + direction].id);
+            }
+        }
+
+        async function saveScrollPos() {
+            if (!isSavingScroll || !document.getElementById('read-view').classList.contains('active')) return;
+            const pos = window.scrollY;
+            progress.scroll_position = pos;
+            await db.from('reading_progress').update({ scroll_position: pos }).eq('id', 1);
+        }
+
+        function throttle(func, limit) {
+            let inThrottling;
+            return function() {
+                const args = arguments;
+                const context = this;
+                if (!inThrottling) {
+                    func.apply(context, args);
+                    inThrottling = true;
+                    setTimeout(() => inThrottling = false, limit);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
