@@ -77,9 +77,37 @@
         .reader-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         .reader-content { font-size: 1.15rem; line-height: 1.8; white-space: pre-wrap; word-wrap: break-word; }
         .reader-nav { display: flex; justify-content: space-between; margin-top: 25px; padding-top: 15px; border-top: 1px solid var(--border-color); }
+
+        /* Toast Notification */
+        .toast {
+            visibility: hidden;
+            min-width: 240px;
+            background-color: #198754;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 12px 16px;
+            position: fixed;
+            z-index: 9999;
+            right: 20px;
+            top: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            font-weight: 500;
+            opacity: 0;
+            transition: opacity 0.3s ease, top 0.3s ease;
+        }
+
+        .toast.show {
+            visibility: visible;
+            opacity: 1;
+            top: 30px;
+        }
     </style>
 </head>
 <body>
+    <!-- THÔNG BÁO NHẸ (TOAST) -->
+    <div id="toast" class="toast"></div>
+
     <div class="container">
         <header>
             <h1 onclick="showList()">📚 Kho Truyện</h1>
@@ -158,19 +186,26 @@
         let progress = { current_chapter_id: null, highest_chapter_id: null, scroll_position: 0 };
         let isSavingScroll = true;
 
-        // Khởi tạo
         window.onload = async () => {
             setTheme(localStorage.getItem('theme') || 'light');
             await loadProgress();
             await loadChapters();
-            
-            // Lắng nghe sự kiện cuộn chuột để tự động lưu vị trí
             window.addEventListener('scroll', throttle(saveScrollPos, 1000));
         };
 
         function setTheme(mode) {
             document.body.className = mode + '-mode';
             localStorage.setItem('theme', mode);
+        }
+
+        // Hàm hiển thị thông báo nhẹ (Toast)
+        function showToast(message, duration = 2000) {
+            const toast = document.getElementById('toast');
+            toast.innerText = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, duration);
         }
 
         async function loadProgress() {
@@ -186,7 +221,6 @@
             renderList();
         }
 
-        // Tính số chương tiếp theo = Max(chapter_number) + 1
         function getNextChapterNumber() {
             if (allChapters.length === 0) return 1;
             const maxNum = Math.max(...allChapters.map(c => Number(c.chapter_number) || 0));
@@ -207,7 +241,6 @@
             const listEl = document.getElementById('chapter-list');
             listEl.innerHTML = '';
             
-            // Reset checkbox Select All khi render lại danh sách
             const selectAllCb = document.getElementById('select-all-page');
             if (selectAllCb) selectAllCb.checked = false;
 
@@ -233,7 +266,6 @@
             renderPagination();
         }
 
-        // Chọn hoặc bỏ chọn tất cả chương hiển thị ở Page hiện tại
         function toggleSelectAllPage(masterCheckbox) {
             const checkboxes = document.querySelectorAll('#chapter-list .ch-checkbox');
             checkboxes.forEach(cb => {
@@ -279,7 +311,6 @@
         }
 
         function showAddForm() {
-            // Tự động điền số chương tiếp theo
             document.getElementById('new-num').value = getNextChapterNumber();
             document.getElementById('new-title').value = '';
             document.getElementById('new-content').value = '';
@@ -292,23 +323,23 @@
             const content = document.getElementById('new-content').value.trim();
 
             if (isNaN(num) || !content) {
-                alert("Vui lòng nhập số chương và nội dung!");
+                showToast("⚠️ Vui lòng nhập số chương và nội dung!");
                 return;
             }
 
             const { error } = await db.from('chapters').insert([{ chapter_number: num, chapter_title: title, content }]);
 
             if (error) {
-                alert("Có lỗi khi lưu chương: " + error.message);
+                showToast("❌ Có lỗi xảy ra khi lưu chương!");
                 return;
             }
 
-            alert(`Lưu thành công Chương ${num}!`);
+            // Hiển thị thông báo nhẹ tự tắt sau 2 giây
+            showToast(`✓ Đã lưu Chương ${num}`);
 
-            // Cập nhật lại dữ liệu danh sách chương ở bộ nhớ tạm
             await loadChapters();
 
-            // Giữ nguyên trang thêm mới: Clear nội dung và tự động nhảy số chương mới
+            // Clear form & chuẩn bị cho chương tiếp theo
             document.getElementById('new-num').value = getNextChapterNumber();
             document.getElementById('new-title').value = '';
             document.getElementById('new-content').value = '';
@@ -318,13 +349,14 @@
         async function deleteSelected() {
             const selected = Array.from(document.querySelectorAll('.ch-checkbox:checked')).map(cb => cb.value);
             if (selected.length === 0) {
-                alert("Vui lòng chọn ít nhất một chương để xóa!");
+                showToast("⚠️ Vui lòng chọn ít nhất một chương để xóa!");
                 return;
             }
 
             if (confirm(`Bạn có chắc chắn muốn xóa ${selected.length} chương đã chọn?`)) {
                 await db.from('chapters').delete().in('id', selected);
                 await loadChapters();
+                showToast(`✓ Đã xóa ${selected.length} chương`);
             }
         }
 
