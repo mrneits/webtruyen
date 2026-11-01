@@ -47,11 +47,12 @@
         .view.active { display: block; }
 
         /* Search & Action Bar */
-        .action-bar { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+        .action-bar { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; align-items: center; }
         .search-box { flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-bg); color: var(--text-color); }
         .btn { padding: 8px 14px; border: none; border-radius: 4px; background: var(--primary-color); color: white; cursor: pointer; font-weight: bold; }
         .btn-danger { background: #dc3545; }
         .btn-secondary { background: #6c757d; }
+        .select-all-label { display: flex; align-items: center; gap: 6px; font-weight: 500; font-size: 0.9rem; cursor: pointer; }
 
         /* Status Card */
         .status-card { background: var(--card-bg); border: 1px solid var(--border-color); padding: 12px; border-radius: 6px; margin-bottom: 15px; font-size: 0.9rem; }
@@ -97,6 +98,9 @@
 
             <div class="action-bar">
                 <input type="text" id="search-input" class="search-box" placeholder="Tìm số hoặc tên chương..." oninput="onSearch()">
+                <label class="select-all-label">
+                    <input type="checkbox" id="select-all-page" onchange="toggleSelectAllPage(this)"> Chọn tất cả trang này
+                </label>
                 <button class="btn" onclick="showAddForm()">+ Thêm chương</button>
                 <button class="btn btn-danger" onclick="deleteSelected()">Xóa mục đã chọn</button>
             </div>
@@ -122,7 +126,7 @@
                 <textarea id="new-content" class="form-control" placeholder="Dán nội dung chữ vào đây..."></textarea>
             </div>
             <button class="btn" onclick="saveChapter()">Lưu Chương</button>
-            <button class="btn btn-secondary" onclick="showList()">Hủy</button>
+            <button class="btn btn-secondary" onclick="showList()">Quay lại danh sách</button>
         </div>
 
         <!-- MÀN HÌNH ĐỌC TRUYỆN -->
@@ -182,6 +186,13 @@
             renderList();
         }
 
+        // Tính số chương tiếp theo = Max(chapter_number) + 1
+        function getNextChapterNumber() {
+            if (allChapters.length === 0) return 1;
+            const maxNum = Math.max(...allChapters.map(c => Number(c.chapter_number) || 0));
+            return maxNum + 1;
+        }
+
         function renderStatus() {
             const current = allChapters.find(c => c.id == progress.current_chapter_id);
             const highest = allChapters.find(c => c.id == progress.highest_chapter_id);
@@ -195,6 +206,10 @@
         function renderList() {
             const listEl = document.getElementById('chapter-list');
             listEl.innerHTML = '';
+            
+            // Reset checkbox Select All khi render lại danh sách
+            const selectAllCb = document.getElementById('select-all-page');
+            if (selectAllCb) selectAllCb.checked = false;
 
             const start = (currentPage - 1) * pageSize;
             const pageItems = filteredChapters.slice(start, start + pageSize);
@@ -216,6 +231,14 @@
             });
 
             renderPagination();
+        }
+
+        // Chọn hoặc bỏ chọn tất cả chương hiển thị ở Page hiện tại
+        function toggleSelectAllPage(masterCheckbox) {
+            const checkboxes = document.querySelectorAll('#chapter-list .ch-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = masterCheckbox.checked;
+            });
         }
 
         function renderPagination() {
@@ -256,6 +279,10 @@
         }
 
         function showAddForm() {
+            // Tự động điền số chương tiếp theo
+            document.getElementById('new-num').value = getNextChapterNumber();
+            document.getElementById('new-title').value = '';
+            document.getElementById('new-content').value = '';
             showView('add-view');
         }
 
@@ -269,13 +296,23 @@
                 return;
             }
 
-            await db.from('chapters').insert([{ chapter_number: num, chapter_title: title, content }]);
-            document.getElementById('new-num').value = '';
+            const { error } = await db.from('chapters').insert([{ chapter_number: num, chapter_title: title, content }]);
+
+            if (error) {
+                alert("Có lỗi khi lưu chương: " + error.message);
+                return;
+            }
+
+            alert(`Lưu thành công Chương ${num}!`);
+
+            // Cập nhật lại dữ liệu danh sách chương ở bộ nhớ tạm
+            await loadChapters();
+
+            // Giữ nguyên trang thêm mới: Clear nội dung và tự động nhảy số chương mới
+            document.getElementById('new-num').value = getNextChapterNumber();
             document.getElementById('new-title').value = '';
             document.getElementById('new-content').value = '';
-            
-            await loadChapters();
-            showList();
+            document.getElementById('new-content').focus();
         }
 
         async function deleteSelected() {
@@ -292,14 +329,12 @@
         }
 
         async function openChapter(id) {
-            isSavingScroll = false; // Tắt lưu vị trí cuộn khi đang chuyển chương
+            isSavingScroll = false;
             currentChapter = allChapters.find(c => c.id == id);
             if (!currentChapter) return;
 
-            // Cập nhật progress
             progress.current_chapter_id = id;
             
-            // Cập nhật chương cao nhất nếu cần
             const highestCh = allChapters.find(c => c.id == progress.highest_chapter_id);
             if (!highestCh || currentChapter.chapter_number > highestCh.chapter_number) {
                 progress.highest_chapter_id = id;
@@ -308,20 +343,17 @@
             document.getElementById('read-title').innerText = `Chương ${currentChapter.chapter_number}: ${currentChapter.chapter_title || ''}`;
             document.getElementById('read-content').innerText = currentChapter.content;
 
-            // Ẩn/hiện nút điều hướng
             const idx = allChapters.findIndex(c => c.id == id);
             document.getElementById('prev-btn').style.visibility = idx > 0 ? 'visible' : 'hidden';
             document.getElementById('next-btn').style.visibility = idx < allChapters.length - 1 ? 'visible' : 'hidden';
 
             showView('read-view');
 
-            // Cập nhật DB
             await db.from('reading_progress').update({
                 current_chapter_id: progress.current_chapter_id,
                 highest_chapter_id: progress.highest_chapter_id
             }).eq('id', 1);
 
-            // Tự động khôi phục vị trí cuộn nếu là chương đang đọc dở
             setTimeout(() => {
                 window.scrollTo(0, progress.scroll_position || 0);
                 isSavingScroll = true;
@@ -331,7 +363,7 @@
         function navChapter(direction) {
             const idx = allChapters.findIndex(c => c.id == currentChapter.id);
             if (idx + direction >= 0 && idx + direction < allChapters.length) {
-                progress.scroll_position = 0; // Reset vị trí cuộn khi sang chương mới
+                progress.scroll_position = 0;
                 openChapter(allChapters[idx + direction].id);
             }
         }
